@@ -1,118 +1,109 @@
-// app/api/checkout/route.ts
-
 import { NextResponse } from "next/server";
-import midtransClient from "midtrans-client";
 import { createClient } from "@/lib/supabase/server";
-import { randomUUID } from "crypto";
+import midtransClient from "midtrans-client";
+import { v4 as uuidv4 } from "uuid";
+
+// Inisialisasi Midtrans Snap
+const snap = new midtransClient.Snap({
+  isProduction: false, // Ganti ke true jika sudah production
+  serverKey: process.env.MIDTRANS_SERVER_KEY, // Ambil dari .env
+  clientKey: process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY, // Ambil dari .env
+});
 
 export async function POST(req: Request) {
-  let order; // Deklarasikan di luar try/catch utama agar bisa diakses di blok catch
+  // 1. Setup Supabase Client untuk mengambil user profile
+  const supabase = createClient();
+  const { data: userData } = await supabase.auth.getUser();
+
+  if (!userData.user) {
+    return NextResponse.json(
+      { success: false, message: "Authentication required" },
+      { status: 401 }
+    );
+  }
+
+  const user = userData.user;
+  const body = await req.json();
+  const { userId, totalAmount, items } = body;
+
+  let internalOrderId = "";
+
+  // Safety check
+  if (!process.env.NEXT_PUBLIC_SITE_URL || !process.env.MIDTRANS_SERVER_KEY) {
+    return NextResponse.json(
+      { success: false, message: "Server configuration missing." },
+      { status: 500 }
+    );
+  }
+
   try {
-    // Inisialisasi Midtrans client
-    let snap = new midtransClient.Snap({
-      isProduction: false,
-      serverKey: process.env.MIDTRANS_SERVER_KEY,
-    });
-
-    const { items, totalPrice } = await req.json();
-
-    // Otentikasi pengguna
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
-
-    // Ambil profil pengguna untuk detail customer
-    const { data: profile } = await supabase
+    // 2. Ambil Profil Pengguna untuk Customer Details Midtrans
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("full_name")
       .eq("id", user.id)
       .single();
 
-    // Siapkan detail pelanggan (Sangat disarankan melengkapi data)
-    const customerDetails = {
-      first_name: profile?.full_name || user.email?.split("@")[0],
+    // 3. Buat Entri Order di Database Supabase
+    const customUuid = uuidv4();
+    internalOrderId = customUuid; // Simpan ID Supabase sebelum prefix Midtrans
+
+    const customerDetailsData = {
       email: user.email,
-      // Jika Anda memiliki data phone di profil, tambahkan di sini
-      phone: "08123456789", // Placeholder jika tidak ada data aktual
+      name: profile?.full_name || user.email?.split("@")[0] || "Guest",
     };
 
-    // Buat catatan pesanan di database
-    const { data: orderData, error: orderError } = await supabase
-      .from("orders")
-      .insert({
-        user_id: user.id,
-        total_price: totalPrice,
-        status: "pending",
-        items: items,
-        customer_details: customerDetails,
-      })
-      .select("id")
-      .single();
+    const { error: insertError } = await supabase.from("orders").insert({
+      id: internalOrderId,
+      user_id: userId,
+      total_price: totalAmount,
+      status: "pending",
+      items: items,
+      customer_details: customerDetailsData,
+    });
 
-    if (orderError) {
-      console.error("Supabase order insert error:", orderError);
-      throw new Error("Gagal membuat catatan pesanan di database.");
+    if (insertError) {
+      console.error("Database Insertion Error:", insertError);
+      return NextResponse.json(
+        { success: false, message: "Failed to create order in database." },
+        { status: 500 }
+      );
     }
 
-    // Simpan data order di variabel luar scope untuk cleanup jika Midtrans gagal
-    order = orderData;
+    // 4. Siapkan Payload Midtrans
+    const midtransOrderId = `belibeli-trx-${internalOrderId}`;
 
-    const orderId = `belibeli-trx-${order.id}`;
-
-    // Siapkan parameter LENGKAP untuk Midtrans
     const parameter = {
       transaction_details: {
-        order_id: orderId,
-        gross_amount: totalPrice,
+        order_id: midtransOrderId,
+        gross_amount: totalAmount,
       },
+      customer_details: customerDetailsData,
       item_details: items.map((item: any) => ({
         id: item.id,
+        name: item.name,
         price: item.price,
         quantity: item.quantity,
-        name: item.name,
       })),
-      customer_details: customerDetails,
-      enabled_payments: [
-        "credit_card",
-        "gopay",
-        "qris",
-        "shopeepay",
-        "bca_va",
-        "bni_va",
-        "bri_va",
-        "permata_va",
-        "mandiri_bill",
-        "indomaret",
-        "alfamart",
-        "akulaku",
-      ],
-      // Callback URL sangat penting untuk e-wallet seperti GoPay
+      callbacks: {
+        // Callback URL untuk redirect browser
+        finish: `${process.env.NEXT_PUBLIC_SITE_URL}/order/${internalOrderId}`,
+        error: `${process.env.NEXT_PUBLIC_SITE_URL}/order/${internalOrderId}`,
+        pending: `${process.env.NEXT_PUBLIC_SITE_URL}/order/${internalOrderId}`,
+      },
       gopay: {
         enable_callback: true,
-        callback_url: `${process.env.NEXT_PUBLIC_SITE_URL}/`,
+        callback_url: `${process.env.NEXT_PUBLIC_SITE_URL}/order/${internalOrderId}`,
       },
     };
 
-    // Update order dengan ID dari Midtrans
-    await supabase
-      .from("orders")
-      .update({ midtrans_order_id: orderId })
-      .eq("id", order.id);
-
-    // --- LOGIKA PEMBUATAN TOKEN DENGAN ERROR HANDLING SPESIFIK ---
-    let token;
+    // 5. Dapatkan Snap Token dari Midtrans
+    let snapToken;
     try {
-      // Buat token transaksi Midtrans
-      token = await snap.createTransactionToken(parameter);
-      console.log(
-        `Midtrans Token created successfully for Order ID: ${order.id}`
-      );
+      const transaction = await snap.createTransaction(parameter);
+      snapToken = transaction.token;
     } catch (midtransError) {
-      // Jika pembuatan token Midtrans GAGAL, ini menangkap error yang acak (seperti failed to load VA/QRIS)
+      // PERBAIKAN: Jika pembuatan token GAGAL (karena VA/QRIS failed to load)
       const errorMessage = (midtransError as Error).message;
       console.error(
         "Midtrans Token Creation Failed. Cleaning up DB:",
@@ -120,33 +111,41 @@ export async function POST(req: Request) {
       );
 
       // Membersihkan pesanan yang baru dibuat di Supabase
-      const { error: deleteError } = await supabase
-        .from("orders")
-        .delete()
-        .eq("id", order.id);
+      await supabase.from("orders").delete().eq("id", internalOrderId);
 
-      if (deleteError) {
-        console.error(
-          "Failed to cleanup failed order in Supabase:",
-          deleteError
-        );
-      }
-
-      // Kembalikan error spesifik ke frontend
-      return new NextResponse(
-        `Failed to create transaction token: ${errorMessage}`,
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Failed to create transaction token: ${errorMessage}`,
+        },
         { status: 500 }
       );
     }
-    // --- AKHIR LOGIKA PEMBUATAN TOKEN ---
 
-    return NextResponse.json({ token });
+    console.log(
+      "Midtrans Token created successfully for Order ID:",
+      midtransOrderId
+    );
+
+    // 6. Respon ke Client
+    return NextResponse.json({
+      success: true,
+      snapToken: snapToken,
+      orderId: internalOrderId,
+    });
   } catch (error) {
-    // Ini menangani error sebelum Midtrans dipanggil (misal: Supabase gagal insert)
-    console.error("API Checkout Error:", error);
+    console.error("API Checkout Global Error:", error);
 
-    return new NextResponse(
-      error instanceof Error ? error.message : "Failed to create transaction",
+    // Hapus order yang gagal dibuat tokennya di Midtrans
+    if (internalOrderId) {
+      await supabase.from("orders").delete().eq("id", internalOrderId);
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to process transaction due to unknown error.",
+      },
       { status: 500 }
     );
   }
