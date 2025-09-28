@@ -11,7 +11,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       {/* Kita panggil Header di sini dan "suntikkan" tombol Upload */}
       <Header>
         <Button asChild>
-          <Link href="/admin/upload">Upload New Product</Link>
+          <Link href="/admin/upload">Upload Product</Link>
         </Button>
       </Header>
       {/* `children` di sini adalah halaman-halaman admin Anda */}
