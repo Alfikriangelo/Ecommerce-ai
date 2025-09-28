@@ -13,6 +13,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <Button asChild>
           <Link href="/admin/upload">Upload Product</Link>
         </Button>
+        <Button asChild>
+          <Link href="/admin/orders">View Orders</Link>
+        </Button>
       </Header>
       {/* `children` di sini adalah halaman-halaman admin Anda */}
       {children}

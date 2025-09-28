@@ -49,7 +49,7 @@ export function Header({ children }: { children?: ReactNode }) {
           href={isAdminPage ? "/admin/products" : "/user/products"}
           className="text-xl font-bold hover:opacity-80"
         >
-          {isAdminPage ? "Admin Dashboard" : "My Resto"}
+          {isAdminPage ? "Admin Dashboard" : "BeliBeli"}
         </Link>
 
         <div className="flex items-center gap-2 md:gap-4">
