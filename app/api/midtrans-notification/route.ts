@@ -1,127 +1,89 @@
-// app/api/midtrans-notification/route.ts
-
 import { NextResponse } from "next/server";
-import midtransClient from "midtrans-client";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
-// Helper function untuk mendapatkan ID pesanan internal dari order_id Midtrans
-function extractInternalOrderId(midtransOrderId: string): number | null {
-  const match = midtransOrderId.match(/^belibeli-trx-(\d+)$/);
-  if (match && match[1]) {
-    return parseInt(match[1], 10);
-  }
-  return null;
-}
+// Helper untuk membuat klien Supabase dengan Service Role Key
+const createServiceSupabaseClient = () => {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!, // PENTING: Gunakan Service Role Key
+    { auth: { persistSession: false } }
+  );
+};
 
 export async function POST(req: Request) {
   try {
     const notificationJson = await req.json();
+    const serverKey = process.env.MIDTRANS_SERVER_KEY;
 
-    // 1. Inisialisasi Midtrans Client
-    let apiClient = new midtransClient.Snap({
-      isProduction: false, // Sesuaikan dengan lingkungan Anda
-      serverKey: process.env.MIDTRANS_SERVER_KEY,
-      clientKey: process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY,
-    });
+    // 1. Verifikasi Signature Hash (Penting untuk Keamanan)
+    const orderId = notificationJson.order_id;
+    const statusCode = notificationJson.status_code;
+    const grossAmount = notificationJson.gross_amount;
 
-    // 2. Mendapatkan status transaksi dari Midtrans (Memverifikasi dengan API Call)
-    const statusResponse = await apiClient.transaction.notification(
-      notificationJson
-    );
-
-    const {
-      order_id,
-      transaction_status,
-      status_code,
-      gross_amount,
-      signature_key,
-      custom_field1, // Digunakan untuk RepayButton
-    } = statusResponse;
-
-    // 3. Verifikasi signature dari Midtrans
-    const serverKey = process.env.MIDTRANS_SERVER_KEY || "";
-    const calculatedSignature = crypto
+    const signature = crypto
       .createHash("sha512")
-      .update(order_id + status_code + gross_amount + serverKey)
+      .update(`${orderId}${statusCode}${grossAmount}${serverKey}`)
       .digest("hex");
 
-    if (calculatedSignature !== signature_key) {
-      console.error("Invalid signature for order:", order_id);
-      return new NextResponse("Invalid signature", { status: 403 });
+    if (signature !== notificationJson.signature_key) {
+      console.warn("Signature verification failed for Order ID:", orderId);
+      // Merespons 401 agar Midtrans tidak mengulang notifikasi yang tidak valid
+      return new NextResponse("Invalid Signature", { status: 401 });
     }
 
-    // --- LOGIKA UPDATE STATUS DATABASE ---
-
-    // Tentukan ID pesanan Midtrans yang benar
-    // Gunakan custom_field1 jika ada (untuk skenario Repay), jika tidak gunakan order_id utama.
-    const midtransOrderId = custom_field1 || order_id;
-
-    // **EKSTRAK ID INTERNAL DARI midtransOrderId**
-    // Karena Anda menggunakan format `belibeli-trx-{supabase_id}` di checkout
-    const internalOrderId = extractInternalOrderId(midtransOrderId);
-
-    if (!internalOrderId) {
-      console.error(
-        "Failed to extract internal order ID from:",
-        midtransOrderId
-      );
-      return new NextResponse("Invalid Order ID Format", { status: 400 });
-    }
+    // PENTING: JANGAN PANGGIL API Midtrans LAGI. Status sudah ada di notificationJson!
+    const transactionStatus = notificationJson.transaction_status;
+    const fraudStatus = notificationJson.fraud_status;
+    const midtransOrderId = notificationJson.order_id; // midtransOrderId adalah belibeli-trx-XXX
 
     let newStatus = "pending";
-    let logMessage = `Notification received for ${midtransOrderId}. Status: ${transaction_status}.`;
 
-    // 4. Tentukan Status Baru Berdasarkan transaction_status Midtrans
-    if (
-      (transaction_status == "capture" && status_code == "200") || // Kartu kredit/debit berhasil
-      transaction_status == "settlement" // Pembayaran non-kartu kredit/debit berhasil
-    ) {
+    if (transactionStatus === "capture") {
+      // Hanya berlaku untuk Kartu Kredit yang non-3DSecure
+      if (fraudStatus == "accept") {
+        newStatus = "success";
+      }
+    } else if (transactionStatus === "settlement") {
+      // Semua pembayaran tunai/VA/QRIS yang berhasil
       newStatus = "success";
-      logMessage = `Order ${midtransOrderId} is SUCCESS. Updating DB.`;
     } else if (
-      transaction_status == "pending" // Masih menunggu pembayaran
+      transactionStatus === "cancel" ||
+      transactionStatus === "deny" ||
+      transactionStatus === "expire"
     ) {
-      newStatus = "pending";
-      logMessage = `Order ${midtransOrderId} is PENDING. No DB status change needed (already pending).`;
-    } else if (
-      transaction_status == "deny" ||
-      transaction_status == "expire" ||
-      transaction_status == "cancel" ||
-      transaction_status == "failure" // Tambahkan status kegagalan
-    ) {
-      newStatus = "failed";
-      logMessage = `Order ${midtransOrderId} is FAILED (${transaction_status}). Updating DB.`;
+      // Pembayaran gagal atau kedaluwarsa
+      newStatus = "failure";
     }
 
-    console.log(logMessage);
+    // 2. Update Database Supabase
+    if (newStatus !== "pending") {
+      const supabase = createServiceSupabaseClient();
 
-    // 5. Buat Supabase client dengan service_role key untuk melewati RLS
-    // Pastikan Anda menggunakan `midtrans_order_id` untuk menghindari duplikasi
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { persistSession: false } }
-    );
+      // Ekstrak ID internal Supabase dari Midtrans Order ID
+      const internalOrderId = midtransOrderId.replace("belibeli-trx-", "");
 
-    // 6. Update tabel orders. Gunakan ID internal dari Supabase.
-    // Order ID Supabase yang sebenarnya adalah bagian dari `midtrans_order_id` yang dibuat.
-    const { error } = await supabase
-      .from("orders")
-      .update({ status: newStatus })
-      .eq("id", internalOrderId); // Update berdasarkan ID internal Supabase yang diekstrak!
+      const { error: updateError } = await supabase
+        .from("orders")
+        .update({ status: newStatus })
+        .eq("id", internalOrderId); // Update berdasarkan ID internal Supabase
 
-    if (error) {
-      console.error("Supabase update error on notification:", error);
-      return new NextResponse("Supabase Update Failed", { status: 500 });
+      if (updateError) {
+        console.error("Supabase update error:", updateError);
+        // Jika update database gagal, kirim status 500 agar Midtrans mencoba lagi
+        return new NextResponse("Database Update Failed", { status: 500 });
+      }
+
+      console.log(
+        `Order ID ${internalOrderId} updated to status: ${newStatus}`
+      );
     }
 
-    // 7. Respon ke Midtrans
-    return new NextResponse("Notification received successfully", {
-      status: 200,
-    });
+    // PENTING: Harus mengembalikan status 200 OK agar Midtrans menganggap notifikasi selesai
+    return new NextResponse("OK", { status: 200 });
   } catch (error) {
-    console.error("Midtrans notification error:", error);
+    console.error("Midtrans Notification Handler Global Error:", error);
+    // Jika ada error internal, kirim 500 agar Midtrans mencoba lagi nanti
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
