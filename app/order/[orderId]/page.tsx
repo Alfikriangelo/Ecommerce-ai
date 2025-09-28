@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge"; // Asumsi Anda memiliki komponen Badge
+import { Badge } from "@/components/ui/badge";
 
 // Definisikan tipe data untuk Order
 interface Order {
