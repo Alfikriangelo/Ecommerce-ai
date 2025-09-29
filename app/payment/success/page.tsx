@@ -1,7 +1,7 @@
 // app/payment/success/page.tsx
 
 import { createClient } from "@/lib/supabase/server";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { ArrowLeft, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import {
@@ -48,43 +48,60 @@ const formatDate = (dateString: string) => {
 export default async function PaymentSuccessPage({
   searchParams,
 }: {
-  searchParams: {
-    order_id?: string;
-    status_code?: string;
-    transaction_status?: string;
-  };
+  searchParams: { order_id?: string };
 }) {
-  const midtransOrderId = searchParams.order_id;
+  const midtransOrderId = `belibeli-trx-${searchParams.order_id}`;
 
-  // Jika tidak ada order_id dari Midtrans, kembalikan ke home
   if (!midtransOrderId) {
-    redirect("/");
+    redirect("/"); // tidak ada order_id, balik ke home
   }
 
   const supabase = createClient();
 
-  // --- PERUBAHAN LOGIKA PENCARIAN ---
-  // CARI PESANAN BERDASARKAN 'midtrans_order_id', BUKAN 'id'
   const { data: order, error } = await supabase
     .from("orders")
     .select("*")
-    .eq("midtrans_order_id", midtransOrderId) // Mencari dengan ID dari Midtrans
-    .single<Order>();
+    .eq("midtrans_order_id", midtransOrderId)
+    .maybeSingle();
 
-  // Jika pesanan tidak ditemukan, tampilkan halaman 404
-  if (error || !order) {
-    return notFound();
+  if (!order) {
+    return (
+      <main className="mx-auto max-w-xl p-6 min-h-screen flex flex-col items-center">
+        <Card className="w-full">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <CheckCircle className="h-16 w-16 text-green-600" />
+            </div>
+            <CardTitle className="text-2xl text-green-600">
+              Pembayaran Berhasil!
+            </CardTitle>
+            <CardDescription>
+              Terima kasih! Pesanan Anda telah kami terima dan sedang diproses.
+            </CardDescription>
+          </CardHeader>
+
+          <div className="p-6 pt-0">
+            <Link href="/user/products" passHref className="block">
+              <Button className="w-full" variant="outline">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Kembali Belanja
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      </main>
+    );
   }
 
   return (
-    <main className="mx-auto max-w-xl p-6 min-h-screen flex items-center">
+    <main className="mx-auto max-w-xl p-6 min-h-screen flex flex-col items-center">
       <Card className="w-full">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             <CheckCircle className="h-16 w-16 text-green-600" />
           </div>
           <CardTitle className="text-2xl text-green-600">
-            Pembayaran Berhasil!
+            Pembayaran gagal
           </CardTitle>
           <CardDescription>
             Terima kasih! Pesanan Anda telah kami terima dan sedang diproses.
@@ -95,12 +112,19 @@ export default async function PaymentSuccessPage({
           <div className="border-b pb-4 space-y-2">
             <div className="flex justify-between items-center">
               <span className="font-semibold text-gray-800">Status</span>
-              <Badge className="bg-green-500 hover:bg-green-600 text-white">
-                BERHASIL
+              <Badge
+                className={
+                  order.status === "success"
+                    ? "bg-green-500 hover:bg-green-600 text-white"
+                    : order.status === "pending"
+                    ? "bg-yellow-400 text-white"
+                    : "bg-red-500 text-white"
+                }
+              >
+                {order.status.toUpperCase()}
               </Badge>
             </div>
             <div className="flex justify-between items-center text-sm text-muted-foreground">
-              {/* Menampilkan ID dari Midtrans agar sesuai dengan URL */}
               <span>ID Pesanan</span>
               <span className="font-mono">{order.midtrans_order_id}</span>
             </div>
@@ -114,17 +138,22 @@ export default async function PaymentSuccessPage({
             <h3 className="text-lg font-semibold border-b pb-1">
               Rincian Item
             </h3>
-            {order.items.map((item, index) => (
-              <div
-                key={index}
-                className="flex justify-between text-sm text-gray-700"
-              >
-                <span className="text-muted-foreground">
-                  {item.name} ({item.quantity}x)
-                </span>
-                <span>{formatPrice(item.price * item.quantity)}</span>
-              </div>
-            ))}
+            {order?.items.map(
+              (
+                item: { name: string; price: number; quantity: number },
+                index: number
+              ) => (
+                <div
+                  key={index}
+                  className="flex justify-between text-sm text-gray-700"
+                >
+                  <span className="text-muted-foreground">
+                    {item.name} ({item.quantity}x)
+                  </span>
+                  <span>{formatPrice(item.price * item.quantity)}</span>
+                </div>
+              )
+            )}
           </div>
 
           <div className="pt-4 border-t border-dashed">
