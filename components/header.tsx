@@ -74,11 +74,11 @@ export function Header({ children }: { children?: ReactNode }) {
               </Link>
 
               {/* 2. Tambahkan Link ke Riwayat Pesanan */}
-              <Button asChild variant="ghost" size="icon">
+              {/* <Button asChild variant="ghost" size="icon">
                 <Link href="/profile/orders" title="My Orders">
                   <User className="h-5 w-5" />
                 </Link>
-              </Button>
+              </Button> */}
             </>
           )}
 
