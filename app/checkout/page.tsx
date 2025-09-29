@@ -119,15 +119,15 @@ const CheckoutPage = () => {
         },
         onPending: function (result: any) {
           // redirect ke halaman status pending
-          router.push(`/order/${data.orderId}`);
+          router.push(`/`);
         },
         onError: function (result: any) {
           // redirect ke halaman error
-          router.push(`/order/${data.orderId}`);
+          router.push(`/`);
         },
         onClose: function () {
           // redirect ke halaman order untuk memeriksa status
-          router.push(`/order/${data.orderId}`);
+          router.push(`/`);
         },
       });
     } catch (error) {
