@@ -1,5 +1,3 @@
-// app/api/checkout/route.ts
-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import midtransClient from "midtrans-client";
@@ -54,7 +52,7 @@ export async function POST(req: Request) {
         price: item.price,
         quantity: item.quantity,
       })),
-      finish_redirect_url: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/success?order_id=${midtransOrderId}`,
+      finish_redirect_url: `${process.env.NEXT_PUBLIC_SITE_URL}/profile/orders`, // Arahkan ke riwayat pesanan
     };
 
     const token = await snap.createTransactionToken(parameter);
@@ -70,9 +68,8 @@ export async function POST(req: Request) {
     });
 
     if (insertError) {
-      console.error("Database Insertion Error:", insertError);
       throw new Error(
-        "Gagal membuat pesanan di database setelah token dibuat."
+        "Failed to create order in database after token creation."
       );
     }
 
@@ -80,7 +77,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("API Checkout Error:", error);
     return new NextResponse(
-      error instanceof Error ? error.message : "Gagal memproses transaksi",
+      error instanceof Error ? error.message : "Failed to process transaction",
       { status: 500 }
     );
   }
