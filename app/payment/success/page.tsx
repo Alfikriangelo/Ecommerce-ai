@@ -1,6 +1,8 @@
+// app/payment/success/page.tsx
+
 import { createClient } from "@/lib/supabase/server";
-import { notFound } from "next/navigation";
-import { ArrowLeft, CheckCircle, Clock, XCircle } from "lucide-react";
+import { notFound, redirect } from "next/navigation";
+import { ArrowLeft, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import {
   Card,
@@ -43,89 +45,62 @@ const formatDate = (dateString: string) => {
   });
 };
 
-export default async function OrderStatusPage({
-  params,
+export default async function PaymentSuccessPage({
+  searchParams,
 }: {
-  // 1. Ubah nama parameter agar cocok dengan nama folder dinamis
-  params: { midtrans_order_id: string };
+  searchParams: {
+    order_id?: string;
+    status_code?: string;
+    transaction_status?: string;
+  };
 }) {
-  const midtransOrderId = params.midtrans_order_id;
+  const midtransOrderId = searchParams.order_id;
+
+  // Jika tidak ada order_id dari Midtrans, kembalikan ke home
+  if (!midtransOrderId) {
+    redirect("/");
+  }
+
   const supabase = createClient();
 
-  // 2. Cari pesanan di database berdasarkan kolom 'midtrans_order_id'
+  // --- PERUBAHAN LOGIKA PENCARIAN ---
+  // CARI PESANAN BERDASARKAN 'midtrans_order_id', BUKAN 'id'
   const { data: order, error } = await supabase
     .from("orders")
     .select("*")
-    .eq("midtrans_order_id", midtransOrderId)
+    .eq("midtrans_order_id", midtransOrderId) // Mencari dengan ID dari Midtrans
     .single<Order>();
 
+  // Jika pesanan tidak ditemukan, tampilkan halaman 404
   if (error || !order) {
     return notFound();
   }
-
-  const getStatusProps = (status: Order["status"]) => {
-    switch (status) {
-      case "success":
-        return {
-          title: "Pembayaran Berhasil",
-          message: "Pesanan Anda telah dibayar dan sedang diproses.",
-          icon: CheckCircle,
-          badgeClass: "bg-green-500 hover:bg-green-600 text-white",
-          colorClass: "text-green-600",
-        };
-      case "pending":
-        return {
-          title: "Menunggu Pembayaran",
-          message:
-            "Silakan selesaikan pembayaran. Kami menunggu konfirmasi dari Midtrans.",
-          icon: Clock,
-          badgeClass: "bg-yellow-500 hover:bg-yellow-600 text-white",
-          colorClass: "text-yellow-600",
-        };
-      case "failure":
-        return {
-          title: "Pembayaran Gagal",
-          message: "Terjadi kegagalan saat transaksi. Silakan coba lagi.",
-          icon: XCircle,
-          badgeClass: "bg-red-500 hover:bg-red-600 text-white",
-          colorClass: "text-red-600",
-        };
-      default:
-        return {
-          title: "Status Tidak Diketahui",
-          message: "Status pesanan ini tidak dapat diverifikasi.",
-          icon: Clock,
-          badgeClass: "bg-gray-500 hover:bg-gray-600 text-white",
-          colorClass: "text-gray-600",
-        };
-    }
-  };
-
-  const currentProps = getStatusProps(order.status);
-  const StatusIcon = currentProps.icon;
 
   return (
     <main className="mx-auto max-w-xl p-6 min-h-screen flex items-center">
       <Card className="w-full">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <StatusIcon className={`h-16 w-16 ${currentProps.colorClass}`} />
+            <CheckCircle className="h-16 w-16 text-green-600" />
           </div>
-          <CardTitle className={`text-2xl ${currentProps.colorClass}`}>
-            {currentProps.title}
+          <CardTitle className="text-2xl text-green-600">
+            Pembayaran Berhasil!
           </CardTitle>
-          <CardDescription>{currentProps.message}</CardDescription>
+          <CardDescription>
+            Terima kasih! Pesanan Anda telah kami terima dan sedang diproses.
+          </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-6">
           <div className="border-b pb-4 space-y-2">
             <div className="flex justify-between items-center">
               <span className="font-semibold text-gray-800">Status</span>
-              <Badge className={currentProps.badgeClass}>
-                {order.status.toUpperCase()}
+              <Badge className="bg-green-500 hover:bg-green-600 text-white">
+                BERHASIL
               </Badge>
             </div>
             <div className="flex justify-between items-center text-sm text-muted-foreground">
+              {/* Menampilkan ID dari Midtrans agar sesuai dengan URL */}
               <span>ID Pesanan</span>
               <span className="font-mono">{order.midtrans_order_id}</span>
             </div>
@@ -166,7 +141,7 @@ export default async function OrderStatusPage({
           <Link href="/user/products" passHref className="block">
             <Button className="w-full" variant="outline">
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Kembali ke Menu
+              Kembali Belanja
             </Button>
           </Link>
         </div>

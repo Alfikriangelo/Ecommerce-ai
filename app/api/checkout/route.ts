@@ -18,14 +18,12 @@ export async function POST(req: Request) {
   try {
     const { items } = await req.json();
 
-    // 1. Inisialisasi Midtrans client di DALAM fungsi
     const snap = new midtransClient.Snap({
       isProduction: false,
       serverKey: process.env.MIDTRANS_SERVER_KEY!,
-      clientKey: process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY!, // Pastikan ini juga ada
+      clientKey: process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY!,
     });
 
-    // 2. Hitung ulang total harga di backend
     const totalPrice = items.reduce((sum: number, item: any) => {
       return sum + item.price * item.quantity;
     }, 0);
@@ -56,13 +54,12 @@ export async function POST(req: Request) {
         price: item.price,
         quantity: item.quantity,
       })),
-      finish_redirect_url: `${process.env.NEXT_PUBLIC_SITE_URL}/order/${internalOrderId}`,
+      // --- DIHAPUS ---
+      // finish_redirect_url tidak lagi dikirim dari sini
     };
 
-    // 3. Buat token Midtrans terlebih dahulu
     const token = await snap.createTransactionToken(parameter);
 
-    // 4. Jika token berhasil dibuat, baru simpan pesanan ke database
     const { error: insertError } = await supabase.from("orders").insert({
       id: internalOrderId,
       user_id: user.id,
@@ -76,7 +73,7 @@ export async function POST(req: Request) {
     if (insertError) {
       console.error("Database Insertion Error:", insertError);
       throw new Error(
-        "Failed to create order in database after token creation."
+        "Gagal membuat pesanan di database setelah token dibuat."
       );
     }
 
@@ -84,7 +81,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("API Checkout Error:", error);
     return new NextResponse(
-      error instanceof Error ? error.message : "Failed to process transaction",
+      error instanceof Error ? error.message : "Gagal memproses transaksi",
       { status: 500 }
     );
   }

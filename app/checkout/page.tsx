@@ -1,3 +1,5 @@
+// pages/checkout.tsx
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -97,7 +99,6 @@ const CheckoutPage = () => {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // PERBAIKAN: Hanya kirim 'items'
         body: JSON.stringify({
           items: apiItems,
         }),
@@ -106,17 +107,20 @@ const CheckoutPage = () => {
       const data = await response.json();
 
       if (data.token) {
-        // Kosongkan keranjang SETELAH token berhasil didapat
         await clearCart();
 
         window.snap.pay(data.token, {
           onSuccess: function (result: any) {
-            router.push(`/order/${data.orderId}`);
+            // --- PERUBAHAN DI SINI ---
+            // Arahkan ke halaman sukses yang baru
+            router.push(`/payment/success?order_id=${data.orderId}`);
           },
           onPending: function (result: any) {
+            // Biarkan ini mengarah ke halaman order status umum
             router.push(`/order/${data.orderId}`);
           },
           onError: function (result: any) {
+            // Biarkan ini mengarah ke halaman order status umum
             router.push(`/order/${data.orderId}`);
           },
           onClose: function () {
@@ -134,7 +138,6 @@ const CheckoutPage = () => {
       );
       setLoading(false);
     }
-    // Hapus 'finally' agar loading tetap aktif saat pop-up Midtrans muncul
   };
 
   return (
