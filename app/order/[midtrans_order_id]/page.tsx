@@ -12,26 +12,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-// Definisikan tipe data untuk Order
 interface Order {
   id: string;
-  user_id: string;
   total_price: number;
   status: "pending" | "success" | "failure";
   items: Array<{
-    id: string | number;
     name: string;
     price: number;
     quantity: number;
   }>;
   created_at: string;
-  customer_details: {
-    email: string;
-    name: string;
-  } | null;
+  midtrans_order_id: string;
 }
 
-// Helper untuk formatting harga (diambil dari app/profile/orders/page.tsx)
 const formatPrice = (price: number) => {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -50,27 +43,26 @@ const formatDate = (dateString: string) => {
   });
 };
 
-// Komponen utama adalah Server Component (async)
 export default async function OrderStatusPage({
   params,
 }: {
-  params: { orderId: string };
+  // 1. Ubah nama parameter agar cocok dengan nama folder dinamis
+  params: { midtrans_order_id: string };
 }) {
-  const orderId = params.orderId;
+  const midtransOrderId = params.midtrans_order_id;
   const supabase = createClient();
 
-  // 1. Ambil Data Pesanan dari Supabase
+  // 2. Cari pesanan di database berdasarkan kolom 'midtrans_order_id'
   const { data: order, error } = await supabase
     .from("orders")
     .select("*")
-    .eq("id", orderId)
-    .maybeSingle<Order>();
+    .eq("midtrans_order_id", midtransOrderId)
+    .single<Order>();
 
   if (error || !order) {
     return notFound();
   }
 
-  // Tentukan properti berdasarkan status
   const getStatusProps = (status: Order["status"]) => {
     switch (status) {
       case "success":
@@ -113,10 +105,10 @@ export default async function OrderStatusPage({
   const StatusIcon = currentProps.icon;
 
   return (
-    <main className="mx-auto max-w-xl p-6 min-h-screen pt-20">
-      <Card>
+    <main className="mx-auto max-w-xl p-6 min-h-screen flex items-center">
+      <Card className="w-full">
         <CardHeader className="text-center">
-          <div className={`flex justify-center mb-4`}>
+          <div className="flex justify-center mb-4">
             <StatusIcon className={`h-16 w-16 ${currentProps.colorClass}`} />
           </div>
           <CardTitle className={`text-2xl ${currentProps.colorClass}`}>
@@ -126,7 +118,6 @@ export default async function OrderStatusPage({
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Status dan Detail Umum */}
           <div className="border-b pb-4 space-y-2">
             <div className="flex justify-between items-center">
               <span className="font-semibold text-gray-800">Status</span>
@@ -136,7 +127,7 @@ export default async function OrderStatusPage({
             </div>
             <div className="flex justify-between items-center text-sm text-muted-foreground">
               <span>ID Pesanan</span>
-              <span className="font-mono">{order.id}</span>
+              <span className="font-mono">{order.midtrans_order_id}</span>
             </div>
             <div className="flex justify-between items-center text-sm text-muted-foreground">
               <span>Tanggal Transaksi</span>
@@ -144,7 +135,6 @@ export default async function OrderStatusPage({
             </div>
           </div>
 
-          {/* Ringkasan Item */}
           <div className="space-y-3">
             <h3 className="text-lg font-semibold border-b pb-1">
               Rincian Item
@@ -162,7 +152,6 @@ export default async function OrderStatusPage({
             ))}
           </div>
 
-          {/* Total Akhir */}
           <div className="pt-4 border-t border-dashed">
             <div className="flex justify-between text-xl font-bold">
               <span>Total Pembayaran</span>
@@ -173,12 +162,11 @@ export default async function OrderStatusPage({
           </div>
         </CardContent>
 
-        {/* Footer dengan Tombol Aksi */}
         <div className="p-6 pt-0">
-          <Link href="/" passHref className="block">
-            <Button className="w-full" variant="default">
+          <Link href="/user/products" passHref className="block">
+            <Button className="w-full" variant="outline">
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Kembali ke Beranda
+              Kembali ke Menu
             </Button>
           </Link>
         </div>

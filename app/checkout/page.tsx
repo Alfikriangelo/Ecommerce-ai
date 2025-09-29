@@ -1,9 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-// Import clearCart dari useCart
 import { useCart } from "@/context/cart-context";
-import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -16,7 +14,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
-// Definisikan tipe data untuk item yang akan dikirim ke API
 interface ApiItem {
   id: string | number;
   name: string;
@@ -24,7 +21,6 @@ interface ApiItem {
   quantity: number;
 }
 
-// Helper untuk formatting harga
 const formatPrice = (price: number) => {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -33,7 +29,6 @@ const formatPrice = (price: number) => {
   }).format(price);
 };
 
-// Deklarasi window.snap global
 declare global {
   interface Window {
     snap: {
@@ -44,14 +39,9 @@ declare global {
 
 const CheckoutPage = () => {
   const [loading, setLoading] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
-
-  // Mengambil useCart dan clearCart
   const { cartItems, isLoading: isCartLoading, clearCart } = useCart();
 
-  // Hitung total jumlah dan format item untuk Midtrans/API
   const { totalAmount, apiItems, cartSummary } = useMemo(() => {
     let calculatedTotal = 0;
     const itemsForApi: ApiItem[] = [];
@@ -60,14 +50,12 @@ const CheckoutPage = () => {
     cartItems.forEach((item) => {
       const itemTotal = item.price * item.quantity;
       calculatedTotal += itemTotal;
-
       itemsForApi.push({
         id: item.id,
         name: item.name,
         price: item.price,
         quantity: item.quantity,
       });
-
       summary.push({
         name: item.name,
         quantity: item.quantity,
@@ -82,15 +70,7 @@ const CheckoutPage = () => {
     };
   }, [cartItems]);
 
-  // 1. Inisialisasi Auth Supabase dan User ID
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setUserId(data.user.id);
-      }
-    });
-
-    // Memuat script Midtrans Snap
     const script = document.createElement("script");
     script.src = "https://app.sandbox.midtrans.com/snap/snap.js";
     script.setAttribute(
@@ -103,16 +83,11 @@ const CheckoutPage = () => {
     return () => {
       document.body.removeChild(script);
     };
-  }, [supabase]);
+  }, []);
 
-  // 2. Handler Pembayaran
   const handleCheckout = async () => {
-    if (!userId) {
-      alert("Silakan login untuk melanjutkan pembayaran.");
-      return;
-    }
     if (totalAmount <= 0 || apiItems.length === 0) {
-      alert("Keranjang belanja kosong atau total tidak valid.");
+      alert("Keranjang belanja kosong.");
       return;
     }
 
@@ -122,53 +97,45 @@ const CheckoutPage = () => {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // PERBAIKAN: Hanya kirim 'items'
         body: JSON.stringify({
-          userId,
-          totalAmount,
           items: apiItems,
         }),
       });
 
       const data = await response.json();
 
-      if (data.success && data.snapToken) {
-        // **PERBAIKAN UTAMA: HAPUS ISI KERANJANG DI SUPABASE**
-        // Jika pembuatan order dan token Midtrans berhasil, kita kosongkan keranjang.
+      if (data.token) {
+        // Kosongkan keranjang SETELAH token berhasil didapat
         await clearCart();
 
-        // Membuka Pop-up Midtrans Snap
-        window.snap.pay(data.snapToken, {
+        window.snap.pay(data.token, {
           onSuccess: function (result: any) {
-            // Ketika success, redirect ke halaman order status
-            router.push(`/order/${data.orderId}?status=success`);
+            router.push(`/order/${data.orderId}`);
           },
           onPending: function (result: any) {
-            // Ketika pending, redirect ke halaman order status
-            router.push(`/order/${data.orderId}?status=pending`);
+            router.push(`/order/${data.orderId}`);
           },
           onError: function (result: any) {
-            // Ketika error, redirect ke halaman order status
-            router.push(`/order/${data.orderId}?status=failure`);
+            router.push(`/order/${data.orderId}`);
           },
           onClose: function () {
-            // Ketika pop-up ditutup tanpa menyelesaikan pembayaran (tetap pending)
-            router.push(`/order/${data.orderId}?status=pending`);
+            // Arahkan ke halaman status order yang sudah dibuat
+            router.push(`/order/${data.orderId}`);
           },
         });
       } else {
-        alert(
-          `Gagal membuat transaksi: ${data.message || "Error tidak diketahui"}`
-        );
+        throw new Error(data.message || "Error tidak diketahui");
       }
     } catch (error) {
       console.error("Error saat checkout:", error);
-      alert("Terjadi kesalahan koneksi.");
-    } finally {
+      alert(
+        error instanceof Error ? error.message : "Terjadi kesalahan koneksi."
+      );
       setLoading(false);
     }
+    // Hapus 'finally' agar loading tetap aktif saat pop-up Midtrans muncul
   };
-
-  const isReady = !isCartLoading && userId;
 
   return (
     <main className="mx-auto max-w-2xl p-6 min-h-screen pt-20">
@@ -178,46 +145,41 @@ const CheckoutPage = () => {
           <CardDescription>Ringkasan Pesanan Anda.</CardDescription>
         </CardHeader>
         <CardContent>
-          {isCartLoading && (
+          {isCartLoading ? (
             <p className="text-center text-muted-foreground">
               Memuat keranjang...
             </p>
-          )}
-
-          {!isCartLoading && cartItems.length === 0 && (
+          ) : cartItems.length === 0 ? (
             <p className="text-center text-red-500">Keranjang Anda kosong.</p>
-          )}
-
-          {/* Ringkasan Item */}
-          <div className="space-y-3">
-            {cartSummary.map((item, index) => (
-              <div
-                key={index}
-                className="flex justify-between items-center text-sm"
-              >
-                <span className="text-muted-foreground">
-                  {item.name} ({item.quantity}x)
-                </span>
-                <span className="font-medium">
-                  {formatPrice(item.price * item.quantity)}
-                </span>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {cartSummary.map((item, index) => (
+                  <div
+                    key={index}
+                    className="flex justify-between items-center text-sm"
+                  >
+                    <span className="text-muted-foreground">
+                      {item.name} ({item.quantity}x)
+                    </span>
+                    <span className="font-medium">
+                      {formatPrice(item.price * item.quantity)}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-
-          {/* Divider */}
-          <div className="my-4 border-t border-dashed" />
-
-          {/* Total Bayar Dinamis */}
-          <div className="flex justify-between text-lg font-bold">
-            <span>Total Bayar</span>
-            <span className="text-primary">{formatPrice(totalAmount)}</span>
-          </div>
+              <div className="my-4 border-t border-dashed" />
+              <div className="flex justify-between text-lg font-bold">
+                <span>Total Bayar</span>
+                <span className="text-primary">{formatPrice(totalAmount)}</span>
+              </div>
+            </>
+          )}
         </CardContent>
-        <CardFooter className="flex flex-col">
+        <CardFooter>
           <Button
             onClick={handleCheckout}
-            disabled={!isReady || loading || totalAmount <= 0}
+            disabled={isCartLoading || loading || totalAmount <= 0}
             className="w-full"
           >
             {loading ? (
@@ -226,12 +188,6 @@ const CheckoutPage = () => {
               "Bayar Sekarang"
             )}
           </Button>
-
-          {!userId && (
-            <p className="text-xs mt-2 text-red-500 text-center">
-              Anda perlu login untuk checkout.
-            </p>
-          )}
         </CardFooter>
       </Card>
     </main>

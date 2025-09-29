@@ -1,3 +1,5 @@
+// components/add-to-cart-button.tsx
+
 "use client";
 
 import { useCart } from "@/context/cart-context";
