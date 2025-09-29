@@ -54,8 +54,7 @@ export async function POST(req: Request) {
         price: item.price,
         quantity: item.quantity,
       })),
-      // --- DIHAPUS ---
-      // finish_redirect_url tidak lagi dikirim dari sini
+      finish_redirect_url: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/success?order_id=${midtransOrderId}`,
     };
 
     const token = await snap.createTransactionToken(parameter);

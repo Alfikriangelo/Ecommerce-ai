@@ -1,4 +1,4 @@
-// pages/checkout.tsx
+// checkout/page.tsx
 
 "use client";
 
@@ -99,38 +99,37 @@ const CheckoutPage = () => {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: apiItems,
-        }),
+        body: JSON.stringify({ items: apiItems }),
       });
 
       const data = await response.json();
 
-      if (data.token) {
-        await clearCart();
-
-        window.snap.pay(data.token, {
-          onSuccess: function (result: any) {
-            // --- PERUBAHAN DI SINI ---
-            // Arahkan ke halaman sukses yang baru
-            router.push(`/payment/success?order_id=${data.orderId}`);
-          },
-          onPending: function (result: any) {
-            // Biarkan ini mengarah ke halaman order status umum
-            router.push(`/order/${data.orderId}`);
-          },
-          onError: function (result: any) {
-            // Biarkan ini mengarah ke halaman order status umum
-            router.push(`/order/${data.orderId}`);
-          },
-          onClose: function () {
-            // Arahkan ke halaman status order yang sudah dibuat
-            router.push(`/order/${data.orderId}`);
-          },
-        });
-      } else {
+      if (!data.token) {
         throw new Error(data.message || "Error tidak diketahui");
       }
+
+      // Kosongkan keranjang dulu
+      await clearCart();
+
+      // Memanggil Snap Pay
+      window.snap.pay(data.token, {
+        onSuccess: function (result: any) {
+          // redirect ke halaman sukses
+          router.push(`/payment/success?order_id=${data.orderId}`);
+        },
+        onPending: function (result: any) {
+          // redirect ke halaman status pending
+          router.push(`/order/${data.orderId}`);
+        },
+        onError: function (result: any) {
+          // redirect ke halaman error
+          router.push(`/order/${data.orderId}`);
+        },
+        onClose: function () {
+          // redirect ke halaman order untuk memeriksa status
+          router.push(`/order/${data.orderId}`);
+        },
+      });
     } catch (error) {
       console.error("Error saat checkout:", error);
       alert(
