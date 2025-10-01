@@ -52,7 +52,7 @@ export async function POST(req: Request) {
         price: item.price,
         quantity: item.quantity,
       })),
-      finish_redirect_url: `${process.env.NEXT_PUBLIC_SITE_URL}/profile/orders`, // Arahkan ke riwayat pesanan
+      finish_redirect_url: `${process.env.NEXT_PUBLIC_SITE_URL}/profile/orders`,
     };
 
     const token = await snap.createTransactionToken(parameter);

@@ -113,21 +113,17 @@ const CheckoutPage = () => {
 
       // Memanggil Snap Pay
       window.snap.pay(data.token, {
-        onSuccess: function (result: any) {
-          // redirect ke halaman sukses
+        onSuccess: function () {
           router.push(`/payment/success?order_id=${data.orderId}`);
         },
-        onPending: function (result: any) {
-          // redirect ke halaman status pending
-          router.push(`/`);
+        onPending: function () {
+          router.push(`/profile/orders`);
         },
-        onError: function (result: any) {
-          // redirect ke halaman error
+        onError: function () {
           router.push(`/`);
         },
         onClose: function () {
-          // redirect ke halaman order untuk memeriksa status
-          router.push(`/`);
+          router.push(`/profile/orders`);
         },
       });
     } catch (error) {
