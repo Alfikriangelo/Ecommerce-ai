@@ -101,7 +101,7 @@ export default async function PaymentSuccessPage({
             <CheckCircle className="h-16 w-16 text-green-600" />
           </div>
           <CardTitle className="text-2xl text-green-600">
-            Pembayaran gagal
+            Pembayaran Berhasil
           </CardTitle>
           <CardDescription>
             Terima kasih! Pesanan Anda telah kami terima dan sedang diproses.
